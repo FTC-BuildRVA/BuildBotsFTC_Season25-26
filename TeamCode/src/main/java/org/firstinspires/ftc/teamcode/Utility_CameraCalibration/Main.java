@@ -7,6 +7,8 @@ package org.firstinspires.ftc.teamcode.Utility_CameraCalibration;
 
 // CORE FTC IMPORTS
 
+import android.annotation.SuppressLint;
+
 import com.acmerobotics.dashboard.config.Config;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
@@ -18,12 +20,14 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.ExposureControl;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.GainControl;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.WhiteBalanceControl;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 
 // DASHBOARD ACMEROBOTICS IMPORTS
 import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.telemetry.TelemetryPacket;
+import com.qualcomm.robotcore.util.Range;
 
 import java.util.concurrent.TimeUnit;
 
@@ -32,25 +36,28 @@ import java.util.concurrent.TimeUnit;
  */
 @Config
 @TeleOp(name = "Utility_CameraCalibration", group = "Linear OpMode")
-public class Utility_CameraCalibration extends LinearOpMode {
+public class Main extends LinearOpMode {
 
     // CAMERA & VISION VARIABLES
     private AprilTagProcessor aprilTag;
     private VisionPortal visionPortal;
-    private int myExposure;
+    public static int myExposure = 100;
+    private int lastMyExposure;
     private int minExposure;
     private int maxExposure;
-    private int myGain;
+    public static int myGain = 100;
+    private int lastMyGain;
     private int minGain;
     private int maxGain;
 
     // TELEMETRY VARIABLES
     private FtcDashboard dashboard;
-    TelemetryPacket packet;
+    TelemetryPacket packet = new TelemetryPacket();
+    public static boolean enableDashboardCameraStream = false;
 
     // MISCELLANEOUS VARIABLES
     private ElapsedTime runtime = new ElapsedTime();
-    public static int dashboardCameraFramerate = 0;
+    public static int dashboardCameraFramerate = 1;
     private int lastDashboardCameraFramerate = dashboardCameraFramerate;
 
     // OP MODE
@@ -59,20 +66,21 @@ public class Utility_CameraCalibration extends LinearOpMode {
         // Print instructions to the driver hub
         handleInstructions();
 
-        myGain=1;
-
         // Setups
         initializeCamera();
         getCameraSetting();
         initializeDashboard();
 
-        // Wait here until the PLAY button is pressed on the driver hub
+        // Wait here until the PLAY button is pressed on the driver      hub
         waitForStart();
         runtime.reset();
 
         // Loops until the STOP button is pressed on the driver hub
         while (opModeIsActive()) {
-            handleFramerateChanges();
+            if(enableDashboardCameraStream){
+                handleFramerateChanges();
+            }
+            handleCameraSettingsChanges();
             handleTelemetry();
         }
     }
@@ -84,13 +92,18 @@ public class Utility_CameraCalibration extends LinearOpMode {
         telemetry.addLine("An Opmode to Calibrate the Camera.");
         telemetry.addLine("- - -");
         telemetry.addLine("On a computer, connect to the Robot's wifi network, then go to 192.168.43.1:8080/dash");
-        telemetry.addLine("Then, press PLAY on the driver hub to begin!");
+        telemetry.addLine("\nThen, press PLAY on the driver hub to begin!");
+        telemetry.addLine("- - -");
+        telemetry.addLine("To view the camera feed, download https://github.com/Genymobile/scrcpy and launch scrcpy.exe");
+
         telemetry.update();
     }
 
     private void initializeDashboard() {
         dashboard = FtcDashboard.getInstance();
-        dashboard.startCameraStream(visionPortal, dashboardCameraFramerate);
+        if(enableDashboardCameraStream){
+            dashboard.startCameraStream(visionPortal, dashboardCameraFramerate);
+        }
     }
 
     private void initializeCamera() {
@@ -107,17 +120,25 @@ public class Utility_CameraCalibration extends LinearOpMode {
     /**
      * Sends telemetry data to the FTC Dashboard
      */
+    @SuppressLint("DefaultLocale")
     void handleTelemetry() {
-        // Make a new, empty telemetry packet for us to fill
-        packet = new TelemetryPacket();
-
         // Read sensors
         double voltage = hardwareMap.voltageSensor.iterator().next().getVoltage();
 
+        // Empty the packet
+        packet.clearLines();
+
+        // Fill the packet
+        packet.put("Voltage:", String.format("%.2f V", voltage));
+        packet.put("Max exposure", maxExposure);
+        packet.put("Min exposure", minExposure);
+        packet.put("Max gain", maxGain);
+        packet.put("Min gain", minGain);
+        packet.put("Dashboard Framerate", dashboardCameraFramerate);
+        packet.clearLines();
 
         // Send the telemetry
         dashboard.sendTelemetryPacket(packet);
-        packet = new TelemetryPacket();
     }
 
     /**
@@ -130,7 +151,14 @@ public class Utility_CameraCalibration extends LinearOpMode {
      */
     private void handleFramerateChanges() {
         if (dashboardCameraFramerate != lastDashboardCameraFramerate) {
-            dashboard.stopCameraStream();
+            // Stop the camera stream (if applicable)
+            try{
+                dashboard.stopCameraStream();
+            }
+            catch(Exception e){
+                // do nothing
+            }
+            // Start the camera stream with the new framerate value
             dashboard.startCameraStream(visionPortal, dashboardCameraFramerate);
             lastDashboardCameraFramerate = dashboardCameraFramerate;
         }
@@ -148,13 +176,9 @@ public class Utility_CameraCalibration extends LinearOpMode {
 
         // Wait for the camera to be open
         if (visionPortal.getCameraState() != VisionPortal.CameraState.STREAMING) {
-            telemetry.addData("Camera", "Waiting");
-            telemetry.update();
             while (!isStopRequested() && (visionPortal.getCameraState() != VisionPortal.CameraState.STREAMING)) {
                 sleep(20);
             }
-            telemetry.addData("Camera", "Ready");
-            telemetry.update();
         }
 
         // Get camera control values unless we are stopping.
@@ -169,4 +193,61 @@ public class Utility_CameraCalibration extends LinearOpMode {
         }
     }
 
+    /**
+     * Adjust camera settings based on user variables set in the FTC Dashboard
+     */
+    private void handleCameraSettingsChanges(){
+        // Only adjust the exposure if the value has changed since we last checked
+        if (myExposure != lastMyExposure) {
+            myExposure = Range.clip(myExposure, minExposure, maxExposure);
+            setManualExposure(myExposure, myGain);
+            lastMyExposure = myExposure;
+        }
+        // Only adjust the gain if the value has changed since we last checked
+        if (myGain != lastMyGain) {
+            myGain = Range.clip(myGain, minGain, maxGain);
+            setManualExposure(myExposure, myGain);
+            lastMyGain = myGain;
+        }
+    }
+
+
+    /**
+     * Manually set the camera gain and exposure.
+     * Can only be called AFTER calling initAprilTag();
+     * Returns true if controls are set.
+     */
+    private boolean setManualExposure(int exposureMS, int gain) {
+        // Ensure Vision Portal has been setup.
+        if (visionPortal == null) {
+            return false;
+        }
+
+        // Wait for the camera to be open
+        if (visionPortal.getCameraState() != VisionPortal.CameraState.STREAMING) {
+            while (!isStopRequested() && (visionPortal.getCameraState() != VisionPortal.CameraState.STREAMING)) {
+                sleep(20);
+            }
+        }
+
+        if (!isStopRequested()) {
+            // Set exposure.  Make sure we are in Manual Mode for these values to take effect.
+            ExposureControl exposureControl = visionPortal.getCameraControl(ExposureControl.class);
+            if (exposureControl.getMode() != ExposureControl.Mode.Manual) {
+                exposureControl.setMode(ExposureControl.Mode.Manual);
+                sleep(50);
+            }
+            exposureControl.setExposure((long) exposureMS, TimeUnit.MILLISECONDS);
+            sleep(20);
+
+            // Set Gain.
+            GainControl gainControl = visionPortal.getCameraControl(GainControl.class);
+            gainControl.setGain(gain);
+            sleep(20);
+            return true;
+
+        } else {
+            return false;
+        }
+    }
 }
