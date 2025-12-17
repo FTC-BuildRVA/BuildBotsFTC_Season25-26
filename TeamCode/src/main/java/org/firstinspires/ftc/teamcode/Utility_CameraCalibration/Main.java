@@ -7,29 +7,32 @@ package org.firstinspires.ftc.teamcode.Utility_CameraCalibration;
 
 // CORE FTC IMPORTS
 
-import android.annotation.SuppressLint;
-
-import com.acmerobotics.dashboard.config.Config;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
-// MISCELLANEOUS FTC IMPORTS
+// MISCELLANEOUS IMPORTS
 import com.qualcomm.robotcore.util.ElapsedTime;
+import com.qualcomm.robotcore.util.Range;
+
+import android.annotation.SuppressLint;
+import android.util.Size;
+
+import java.util.concurrent.TimeUnit;
 
 // VISION ANALYSIS FTC IMPORTS
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.ExposureControl;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.GainControl;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.WhiteBalanceControl;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.FocusControl;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.PtzControl;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 
 // DASHBOARD ACMEROBOTICS IMPORTS
 import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.telemetry.TelemetryPacket;
-import com.qualcomm.robotcore.util.Range;
-
-import java.util.concurrent.TimeUnit;
+import com.acmerobotics.dashboard.config.Config;
 
 /*
  * Code starts here
@@ -41,14 +44,50 @@ public class Main extends LinearOpMode {
     // CAMERA & VISION VARIABLES
     private AprilTagProcessor aprilTag;
     private VisionPortal visionPortal;
+
     public static int myExposure = 100;
     private int lastMyExposure;
     private int minExposure;
     private int maxExposure;
+
     public static int myGain = 100;
     private int lastMyGain;
     private int minGain;
     private int maxGain;
+
+    public static int myWhiteBal = 4000;
+    private int lastWhiteBal;
+    private int minWhiteBal;
+    private int maxWhiteBal;
+
+    public static int myFocus = 50;
+    private int lastMyFocus;
+    private int minFocus;
+    private int maxFocus;
+
+    public static int myPan = 0;
+    private int lastMyPan;
+    private int minPan;
+    private int maxPan;
+
+    public static int myTilt = 0;
+    private int lastMyTilt;
+    private int minTilt;
+    private int maxTilt;
+
+    public static int myZoom = 100;
+    private int lastMyZoom;
+    private int minZoom;
+    private int maxZoom;
+
+    public static boolean autoExposureGain = false;
+    private boolean lastAutoExposureGain = autoExposureGain;
+
+    public static boolean autoWhiteBalance = false;
+    private boolean lastAutoWhiteBalance = autoWhiteBalance;
+
+    public static boolean autoFocus = false;
+    private boolean lastAutoFocus = autoFocus;
 
     // TELEMETRY VARIABLES
     private FtcDashboard dashboard;
@@ -77,7 +116,7 @@ public class Main extends LinearOpMode {
 
         // Loops until the STOP button is pressed on the driver hub
         while (opModeIsActive()) {
-            if(enableDashboardCameraStream){
+            if (enableDashboardCameraStream) {
                 handleFramerateChanges();
             }
             handleCameraSettingsChanges();
@@ -101,7 +140,7 @@ public class Main extends LinearOpMode {
 
     private void initializeDashboard() {
         dashboard = FtcDashboard.getInstance();
-        if(enableDashboardCameraStream){
+        if (enableDashboardCameraStream) {
             dashboard.startCameraStream(visionPortal, dashboardCameraFramerate);
         }
     }
@@ -114,7 +153,16 @@ public class Main extends LinearOpMode {
         visionPortal = new VisionPortal.Builder()
                 .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
                 .addProcessor(aprilTag)
+                .setCameraResolution(new Size(640, 480))
                 .build();
+
+        // Supported resolutions:
+        // 640x360
+        // 640x480
+        // 800x448
+        // 864x480
+        // 800x600
+        // 1920x1080
     }
 
     /**
@@ -129,11 +177,21 @@ public class Main extends LinearOpMode {
         packet.clearLines();
 
         // Fill the packet
-        packet.put("Voltage:", String.format("%.2f V", voltage));
+        packet.put("Voltage", String.format("%.2f V", voltage));
         packet.put("Max exposure", maxExposure);
         packet.put("Min exposure", minExposure);
         packet.put("Max gain", maxGain);
         packet.put("Min gain", minGain);
+        packet.put("Max white balance", maxWhiteBal);
+        packet.put("Min white balance", minWhiteBal);
+        packet.put("Max focus", maxFocus);
+        packet.put("Min focus", minFocus);
+        packet.put("Max pan", maxPan);
+        packet.put("Min pan", minPan);
+        packet.put("Max tilt", maxTilt);
+        packet.put("Min tilt", minTilt);
+        packet.put("Max zoom", maxZoom);
+        packet.put("Min zoom", minZoom);
         packet.put("Dashboard Framerate", dashboardCameraFramerate);
         packet.clearLines();
 
@@ -152,10 +210,9 @@ public class Main extends LinearOpMode {
     private void handleFramerateChanges() {
         if (dashboardCameraFramerate != lastDashboardCameraFramerate) {
             // Stop the camera stream (if applicable)
-            try{
+            try {
                 dashboard.stopCameraStream();
-            }
-            catch(Exception e){
+            } catch (Exception e) {
                 // do nothing
             }
             // Start the camera stream with the new framerate value
@@ -190,34 +247,104 @@ public class Main extends LinearOpMode {
             GainControl gainControl = visionPortal.getCameraControl(GainControl.class);
             minGain = gainControl.getMinGain();
             maxGain = gainControl.getMaxGain();
+
+            WhiteBalanceControl whiteBalanceControl = visionPortal.getCameraControl(WhiteBalanceControl.class);
+            minWhiteBal = whiteBalanceControl.getMinWhiteBalanceTemperature();
+            maxWhiteBal = whiteBalanceControl.getMaxWhiteBalanceTemperature();
+
+            FocusControl focusControl = visionPortal.getCameraControl(FocusControl.class);
+            minFocus = (int) focusControl.getMinFocusLength();
+            maxFocus = (int) focusControl.getMaxFocusLength();
+
+            PtzControl ptzControl = visionPortal.getCameraControl(PtzControl.class);
+            PtzControl.PanTiltHolder holderMaxPT = ptzControl.getMaxPanTilt();
+            minPan = 0;
+            maxPan = holderMaxPT.pan;
+            minTilt = 0;
+            maxTilt = holderMaxPT.tilt;
+            minZoom = ptzControl.getMinZoom();
+            maxZoom = ptzControl.getMaxZoom();
         }
     }
 
     /**
      * Adjust camera settings based on user variables set in the FTC Dashboard
      */
-    private void handleCameraSettingsChanges(){
-        // Only adjust the exposure if the value has changed since we last checked
+    private void handleCameraSettingsChanges() {
+        boolean settingsChanged = false;
+
+        // Check if auto mode settings have changed
+        if (autoExposureGain != lastAutoExposureGain) {
+            lastAutoExposureGain = autoExposureGain;
+            settingsChanged = true;
+        }
+
+        if (autoWhiteBalance != lastAutoWhiteBalance) {
+            lastAutoWhiteBalance = autoWhiteBalance;
+            settingsChanged = true;
+        }
+
+        if (autoFocus != lastAutoFocus) {
+            lastAutoFocus = autoFocus;
+            settingsChanged = true;
+        }
+
+        // Check if any values have changed and clip them
         if (myExposure != lastMyExposure) {
             myExposure = Range.clip(myExposure, minExposure, maxExposure);
-            setManualExposure(myExposure, myGain);
             lastMyExposure = myExposure;
+            settingsChanged = true;
         }
-        // Only adjust the gain if the value has changed since we last checked
+
         if (myGain != lastMyGain) {
             myGain = Range.clip(myGain, minGain, maxGain);
-            setManualExposure(myExposure, myGain);
             lastMyGain = myGain;
+            settingsChanged = true;
+        }
+
+        if (myWhiteBal != lastWhiteBal) {
+            myWhiteBal = Range.clip(myWhiteBal, minWhiteBal, maxWhiteBal);
+            lastWhiteBal = myWhiteBal;
+            settingsChanged = true;
+        }
+
+        if (myFocus != lastMyFocus) {
+            myFocus = Range.clip(myFocus, minFocus, maxFocus);
+            lastMyFocus = myFocus;
+            settingsChanged = true;
+        }
+
+        if (myPan != lastMyPan) {
+            myPan = Range.clip(myPan, minPan, maxPan);
+            lastMyPan = myPan;
+            settingsChanged = true;
+        }
+
+        if (myTilt != lastMyTilt) {
+            myTilt = Range.clip(myTilt, minTilt, maxTilt);
+            lastMyTilt = myTilt;
+            settingsChanged = true;
+        }
+
+        if (myZoom != lastMyZoom) {
+            myZoom = Range.clip(myZoom, minZoom, maxZoom);
+            lastMyZoom = myZoom;
+            settingsChanged = true;
+        }
+
+        // If any setting changed, apply all settings at once
+        if (settingsChanged) {
+            setNewCameraSettings(myExposure, myGain, myWhiteBal, myFocus, myPan, myTilt, myZoom);
         }
     }
 
-
     /**
-     * Manually set the camera gain and exposure.
+     * Apply all camera settings at once.
+     * Sets mode to auto or manual based on user preferences, then applies manual values if in manual mode.
      * Can only be called AFTER calling initAprilTag();
-     * Returns true if controls are set.
+     * Returns true if controls are set successfully.
      */
-    private boolean setManualExposure(int exposureMS, int gain) {
+    private boolean setNewCameraSettings(int exposureMS, int gain, int whiteBalance, double focusLength, int pan, int tilt, int zoom) {
         // Ensure Vision Portal has been setup.
         if (visionPortal == null) {
             return false;
@@ -231,21 +358,76 @@ public class Main extends LinearOpMode {
         }
 
         if (!isStopRequested()) {
-            // Set exposure.  Make sure we are in Manual Mode for these values to take effect.
+            // Handle exposure and gain mode
             ExposureControl exposureControl = visionPortal.getCameraControl(ExposureControl.class);
-            if (exposureControl.getMode() != ExposureControl.Mode.Manual) {
-                exposureControl.setMode(ExposureControl.Mode.Manual);
-                sleep(50);
+            if (autoExposureGain) {
+                // Set to auto mode (AperturePriority for C920/C270)
+                if (exposureControl.getMode() != ExposureControl.Mode.AperturePriority) {
+                    exposureControl.setMode(ExposureControl.Mode.AperturePriority);
+                    sleep(50);
+                }
+            } else {
+                // Set to manual mode and apply values
+                if (exposureControl.getMode() != ExposureControl.Mode.Manual) {
+                    exposureControl.setMode(ExposureControl.Mode.Manual);
+                    sleep(50);
+                }
+                exposureControl.setExposure((long) exposureMS, TimeUnit.MILLISECONDS);
+                sleep(20);
+
+                GainControl gainControl = visionPortal.getCameraControl(GainControl.class);
+                gainControl.setGain(gain);
+                sleep(20);
             }
-            exposureControl.setExposure((long) exposureMS, TimeUnit.MILLISECONDS);
+
+            // Handle white balance mode
+            WhiteBalanceControl whiteBalanceControl = visionPortal.getCameraControl(WhiteBalanceControl.class);
+            if (autoWhiteBalance) {
+                // Set to auto mode
+                if (whiteBalanceControl.getMode() != WhiteBalanceControl.Mode.AUTO) {
+                    whiteBalanceControl.setMode(WhiteBalanceControl.Mode.AUTO);
+                    sleep(50);
+                }
+            } else {
+                // Set to manual mode and apply value
+                if (whiteBalanceControl.getMode() != WhiteBalanceControl.Mode.MANUAL) {
+                    whiteBalanceControl.setMode(WhiteBalanceControl.Mode.MANUAL);
+                    sleep(50);
+                }
+                whiteBalanceControl.setWhiteBalanceTemperature(whiteBalance);
+                sleep(20);
+            }
+
+            // Handle focus mode
+            FocusControl focusControl = visionPortal.getCameraControl(FocusControl.class);
+            if (autoFocus) {
+                // Set to auto mode (ContinuousAuto for C920)
+                if (focusControl.getMode() != FocusControl.Mode.ContinuousAuto) {
+                    focusControl.setMode(FocusControl.Mode.ContinuousAuto);
+                    sleep(50);
+                }
+            } else {
+                // Set to manual mode (Fixed) and apply value
+                if (focusControl.getMode() != FocusControl.Mode.Fixed) {
+                    focusControl.setMode(FocusControl.Mode.Fixed);
+                    sleep(50);
+                }
+                focusControl.setFocusLength(focusLength);
+                sleep(20);
+            }
+
+            // Handle PTZ (Pan, Tilt, Zoom) - always manual control
+            PtzControl ptzControl = visionPortal.getCameraControl(PtzControl.class);
+            ptzControl.setZoom(zoom);
+            sleep(20);
+            PtzControl.PanTiltHolder holderPT = new PtzControl.PanTiltHolder();
+            holderPT.pan = pan;
+            holderPT.tilt = tilt;
+            ptzControl.setPanTilt(holderPT);
             sleep(20);
 
-            // Set Gain.
-            GainControl gainControl = visionPortal.getCameraControl(GainControl.class);
-            gainControl.setGain(gain);
-            sleep(20);
+
             return true;
-
         } else {
             return false;
         }
