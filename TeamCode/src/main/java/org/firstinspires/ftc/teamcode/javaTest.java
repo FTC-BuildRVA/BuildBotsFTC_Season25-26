@@ -27,8 +27,26 @@ import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 
+// FTC DASHBOARD IMPORTS
+import com.acmerobotics.dashboard.FtcDashboard;
+import com.acmerobotics.dashboard.telemetry.TelemetryPacket;
+import com.acmerobotics.dashboard.canvas.Canvas;
+import com.acmerobotics.dashboard.config.Config;
+
+import java.util.ArrayList;
+
 @TeleOp(name = "test (Blocks to Java)")
+@Config
 public class javaTest extends LinearOpMode {
+
+    //FTC DASHBOARD
+    private FtcDashboard dashboard;
+    TelemetryPacket packet = new TelemetryPacket();
+    public static double max = 3000;
+    public static double min = 1000;
+
+    // PHONE TELEMETRY FOR CAMERA
+    List<String> telemetryStrings = new ArrayList<>();
 
     private IMU imuIMU;
     private DcMotor intake;
@@ -83,11 +101,16 @@ public class javaTest extends LinearOpMode {
     double maxInt;
     int shooterEnable;
 
+    double oldIntake2 = 0;
+    boolean intakeModeFlag = false;
+
     /**
      * Describe this function...
      */
     @Override
     public void runOpMode() {
+        dashboard = FtcDashboard.getInstance();
+
         imuIMU = hardwareMap.get(IMU.class, "imu");
         intake = hardwareMap.get(DcMotor.class, "intake");
         shooterLeft = hardwareMap.get(DcMotor.class, "shooter_left");
@@ -117,13 +140,20 @@ public class javaTest extends LinearOpMode {
                 driveRelative();
                 aim();
                 process();
-                if (gamepad1.aWasPressed()) {
-                    telemetry2();
-                    telemetryAprilTag();
-                    telemetry.update();
-                }
+//                if (gamepad1.aWasPressed()) {
+//
+//                }
+                telemetry2();
+                telemetryAprilTag();
+                telemetry.update();
+                dashTelemetry();
                 oldTime = newTime;
             }
+        }
+
+        // CLEANUP
+        if (myVisionPortal != null) {
+            myVisionPortal.close();
         }
     }
 
@@ -203,7 +233,7 @@ public class javaTest extends LinearOpMode {
         shooterOver = false;
         shooterEnable = 1;
         aimMoveSpeed = 0.75;
-        aimYawMultiplier = 0.2;
+        aimYawMultiplier = 0.1;
         aimP = 0;
         aimI = 0;
         aimD = 0;
@@ -224,6 +254,7 @@ public class javaTest extends LinearOpMode {
      * Initialize AprilTag Detection.vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
      */
     private void initAprilTag() {
+        telemetryHelper("Camera initializing...");
         // Create the AprilTag processor by using a builder.
         myAprilTagProcessor = new AprilTagProcessor.Builder().build();
 
@@ -231,7 +262,7 @@ public class javaTest extends LinearOpMode {
         myVisionPortal = new VisionPortal.Builder()
                 .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
                 .addProcessor(myAprilTagProcessor)
-                .setCameraResolution(new Size(640, 480))
+                .setCameraResolution(new Size(800, 448))
                 .build();
         // Supported resolutions:
         // 640x360
@@ -240,28 +271,68 @@ public class javaTest extends LinearOpMode {
         // 864x480
         // 800x600
         // 1920x1080
+        telemetryHelper("Camera initialized!");
+        telemetryHelper("Waiting for camera stream to start...");
 
         if (myVisionPortal.getCameraState() != VisionPortal.CameraState.STREAMING) {
             while (!isStopRequested() && (myVisionPortal.getCameraState() != VisionPortal.CameraState.STREAMING)) {
                 sleep(20);
             }
+            telemetryHelper("Camera streaming!");
+        }
+        else {
+            telemetryHelper("Camera already streaming!");
         }
 
+        sleep(1000);
+
+        // BEGIN EXPOSURE, GAIN, FOCUS MODIFICATION
         if (!isStopRequested()) {
+            telemetryHelper("Getting exposure control object...");
             ExposureControl exposureControl = myVisionPortal.getCameraControl(ExposureControl.class);
+            telemetryHelper("Setting manual exposure control...");
             if (exposureControl.getMode() != ExposureControl.Mode.Manual) {
                 exposureControl.setMode(ExposureControl.Mode.Manual);
                 sleep(50);
+                telemetryHelper("Set manual exposure control!");
             }
-            exposureControl.setExposure((long) 1, TimeUnit.MILLISECONDS);
-            sleep(20);
+            else{
+                telemetryHelper("Manual exposure control already set!");
+            }
 
+            telemetryHelper("Setting exposure...");
+            exposureControl.setExposure((long) 2, TimeUnit.MILLISECONDS);
+            sleep(20);
+            telemetryHelper("Exposure set!");
+
+            telemetryHelper("Getting gain control object...");
             GainControl gainControl = myVisionPortal.getCameraControl(GainControl.class);
+            telemetryHelper("Got gain control object!");
+
+            telemetryHelper("Setting gain...");
             gainControl.setGain(100);
             sleep(20);
+            telemetryHelper("Gain set!");
+
+            telemetryHelper("Getting focus control object...");
+            FocusControl focusControl = myVisionPortal.getCameraControl(FocusControl.class);
+            telemetryHelper("Got focus control object!");
+            telemetryHelper("Setting manual focus control...");
+            if (focusControl.getMode() != FocusControl.Mode.Fixed) {
+                focusControl.setMode(FocusControl.Mode.Fixed);
+                sleep(50);
+                telemetryHelper("Set manual focus control!");
+            }
+            else{
+                telemetryHelper("Manual exposure control already set!");
+            }
+            telemetryHelper("Setting focus...");
+            focusControl.setFocusLength(25);
+            sleep(20);
+            telemetryHelper("Focus set!");
         }
-
-
+        // END EXPOSURE AND GAIN MODIFICATION
+        telemetryHelper("Camera ready!");
     }
 
     /**
@@ -273,19 +344,26 @@ public class javaTest extends LinearOpMode {
         aimError = -(angleBearingGoal + angleYawGoal * aimYawMultiplier);
         if (gamepad1.right_bumper) {
             moveSpeedMultiplier = aimMoveSpeed;
-            aimPID = new PIDFCoefficients(0.1, 0.0, 0.0, 0);
+//            aimPID = new PIDFCoefficients(0.02, 0.001, 0.01, 0);
+            aimPID = new PIDFCoefficients(0.02, 0.01, 0.01, 0);
             aimP = aimError * aimPID.p;
-            aimI = aimI + aimError * aimPID.i;
-            aimD = (aimError - lastError) * aimPID.d;
-            turn = turn + aimP + aimI + aimD;
-
+//            aimI = aimI + aimError * aimPID.i;
+            aimI = aimI + aimPID.i * (aimError / Math.abs(aimError));
             if (Math.abs(aimError) < okAngle){
-                frontRight.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-                frontLeft.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-                backRight.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-                backLeft.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-                turn=0;
+                aimI = 0;
             }
+            aimD = (aimError - lastError) * aimPID.d;
+            turn = turnRelative + aimP + aimI + aimD;
+
+
+//            if (Math.abs(aimError) < 3){
+//                frontRight.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+//                frontLeft.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+//                backRight.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+//                backLeft.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+//                turn=0;
+//            }
+
         } else {
             moveSpeedMultiplier = MAX;
             aimI = 0;
@@ -301,7 +379,7 @@ public class javaTest extends LinearOpMode {
         myAprilTagDetections = myAprilTagProcessor.getDetections();
         for (AprilTagDetection myAprilTagDetectionItem2 : myAprilTagDetections) {
             myAprilTagDetection = myAprilTagDetectionItem2;
-            if (myAprilTagDetection.id == 23) {
+            if (myAprilTagDetection.id == 20) {
                 angleBearingGoal = myAprilTagDetection.ftcPose.bearing;
                 angleYawGoal = myAprilTagDetection.ftcPose.yaw;
                 Range2 = myAprilTagDetection.ftcPose.range;
@@ -357,19 +435,42 @@ public class javaTest extends LinearOpMode {
                 Shooter = 1950;
             }
         }
-        if (gamepad1.dpadDownWasPressed()) {
-            intake2 = (maxInt * -1.0);
+        // INTAKE CONTROL
+        if (gamepad1.b || gamepad1.right_bumper) {
+            if (!intakeModeFlag) {
+                oldIntake2 = intake2;
+                intakeModeFlag = true;
+            }
+
+            if (gamepad1.dpad_down) {
+                intake2 = (maxInt * -1.0);
+            }
+            else if (gamepad1.dpad_up) {
+                intake2 = (maxInt);
+            }
+            else {
+                intake2 = 0.0;
+            }
         }
-        if (gamepad1.dpadUpWasPressed()) {
-            intake2 = (maxInt);
+        else{
+            if (intakeModeFlag) {
+                intake2 = oldIntake2;
+                intakeModeFlag = false;
+            }
+            if (gamepad1.dpadDownWasPressed()) {
+                intake2 = (maxInt * -1.0);
+            }
+            if (gamepad1.dpadUpWasPressed()) {
+                intake2 = (maxInt);
+            }
         }
         if (shooterRpm < Shooter - 200) {
             myElapsedTime.reset();
         }
-        if (myElapsedTime.milliseconds() < 2000) {
-            feederLeft.setPower(0);
+        if (myElapsedTime.milliseconds() < 1000) {
+//            feederRight.setPower(0);
+//            feederLeft.setPower(0);
             feederMid.setPower(0);
-            feederRight.setPower(0);
         } else {
             if (gamepad1.b) {
                 feederLeft.setPower(1);
@@ -380,6 +481,10 @@ public class javaTest extends LinearOpMode {
                 feederMid.setPower(0);
                 feederRight.setPower(0);
             }
+        }
+        if (gamepad1.a) {
+            feederLeft.setPower(1);
+            feederRight.setPower(1);
         }
         if (gamepad1.start) {
             imuIMU.resetYaw();
@@ -427,5 +532,22 @@ public class javaTest extends LinearOpMode {
         telemetry.addData("target shooter rpm", Double.parseDouble(JavaUtil.formatNumber(Shooter, 0)));
         telemetry.addData("intake speed", Double.parseDouble(JavaUtil.formatNumber(intake2, 2)));
         telemetry.addData("over", shooterOver);
+    }
+
+    private void dashTelemetry() {
+        packet.put("Max RPM", 3000);
+        packet.put("Min RPM", 1000);
+        packet.put("Target RPM", Shooter);
+        packet.put("Left RPM", shooterRpm);
+        packet.put("Right RPM",Math.abs(((DcMotorEx) shooterRight).getVelocity()) * 2.1429);
+        dashboard.sendTelemetryPacket(packet);
+    }
+
+    private void telemetryHelper(String str) {
+        telemetryStrings.add(str);
+        for(String telStr : telemetryStrings){
+            telemetry.addLine(telStr);
+        }
+        telemetry.update();
     }
 }
